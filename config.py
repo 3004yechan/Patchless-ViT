@@ -31,8 +31,8 @@ def get_args():
     parser.add_argument('--seed', default=42, type=int)
     # 모델 선택 인자 수정
     parser.add_argument('--model', default='vit_b16', type=str,
-                        help='model type to use (vit_b16 or sparse_vit_b16)',
-                        choices=['vit_b16', 'sparse_vit_b16'])
+                        help='model type to use (vit_b16, sparse_vit_b16, or sparse_vit_b16_efficient)',
+                        choices=['vit_b16', 'sparse_vit_b16', 'sparse_vit_b16_efficient'])
 
     args_for_data(parser)
     args_for_train(parser)

@@ -80,13 +80,13 @@ class Transformer(nn.Module):
 
 # For SparseViT
 class SparseTransformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0., **sparse_attn_kwargs):
         super().__init__()
         assert SparseAttention is not None, 'native-sparse-attention-pytorch is not installed'
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                PreNorm(dim, SparseAttention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
+                PreNorm(dim, SparseAttention(dim, heads = heads, dim_head = dim_head, **sparse_attn_kwargs)),
                 PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
             ]))
     def forward(self, x):
@@ -146,7 +146,16 @@ class ViT(nn.Module):
 
 # Sparse ViT Model
 class SparseViT(nn.Module):
-    def __init__(self, *, image_size, num_classes, dim, depth, heads, mlp_dim, pool = 'cls', channels = 3, dim_head = 64, dropout = 0., emb_dropout = 0.):
+    def __init__(
+        self, *, image_size, num_classes, dim, depth, heads, mlp_dim, 
+        pool = 'cls', channels = 3, dim_head = 64, dropout = 0., emb_dropout = 0.,
+        # SparseAttention args
+        sliding_window_size = 32,
+        compress_block_size = 16,
+        compress_block_sliding_stride = 4,
+        selection_block_size = 64,
+        num_selected_blocks = 4
+    ):
         super().__init__()
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(1) # Using 1x1 patches (pixels as tokens)
@@ -165,8 +174,17 @@ class SparseViT(nn.Module):
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.dropout = nn.Dropout(emb_dropout)
+        
+        sparse_attn_kwargs = dict(
+            sliding_window_size = sliding_window_size,
+            compress_block_size = compress_block_size,
+            compress_block_sliding_stride = compress_block_sliding_stride,
+            selection_block_size = selection_block_size,
+            num_selected_blocks = num_selected_blocks,
+            causal = False # Not an autoregressive model
+        )
 
-        self.transformer = SparseTransformer(dim, depth, heads, dim_head, mlp_dim, dropout)
+        self.transformer = SparseTransformer(dim, depth, heads, dim_head, mlp_dim, dropout, **sparse_attn_kwargs)
 
         self.pool = pool
         self.to_latent = nn.Identity()
@@ -215,7 +233,31 @@ def sparse_vit_b16(num_classes, image_size):
         depth=12,
         heads=12,
         mlp_dim=3072,
-        channels=3
+        channels=3,
+        # SparseAttention 기본 하이퍼파라미터 설정
+        sliding_window_size = 32,
+        compress_block_size = 16,
+        compress_block_sliding_stride = 4,
+        selection_block_size = 64,
+        num_selected_blocks = (image_size // 64)**2
+    )
+
+# 더 공격적인 희소성 설정으로 VRAM 사용량을 줄인 버전
+def sparse_vit_b16_efficient(num_classes, image_size):
+    return SparseViT(
+        image_size=image_size,
+        num_classes=num_classes,
+        dim=768,
+        depth=12,
+        heads=12,
+        mlp_dim=3072,
+        channels=3,
+        # VRAM 사용량을 줄이기 위해 파라미터 조정
+        sliding_window_size = 16,            # 지역 어텐션 범위 감소 (32 -> 16)
+        compress_block_size = 16,
+        compress_block_sliding_stride = 8,   # 요약본 생성을 더 거치게 함 (4 -> 8)
+        selection_block_size = 64,
+        num_selected_blocks = 1              # 전역 어텐션 블록 수를 1개로 고정
     )
 
 class Temp(nn.Module):
@@ -235,6 +277,10 @@ class Temp(nn.Module):
             if SparseAttention is None:
                 raise ImportError("Please install native-sparse-attention-pytorch to use SparseViT")
             self.model = sparse_vit_b16(num_classes=num_classes, image_size=image_size)
+        elif args.model == 'sparse_vit_b16_efficient':
+            if SparseAttention is None:
+                raise ImportError("Please install native-sparse-attention-pytorch to use SparseViT")
+            self.model = sparse_vit_b16_efficient(num_classes=num_classes, image_size=image_size)
         else:
             raise ValueError(f"Unknown model type: {args.model}")
 
