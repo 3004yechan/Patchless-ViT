@@ -4,12 +4,7 @@ from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
 # pip install native-sparse-attention-pytorch
-try:
-    from native_sparse_attention import SparseAttention
-except ImportError:
-    print("Warning: native-sparse-attention-pytorch is not installed. SparseViT will not be available.")
-    print("Please install it via: pip install native-sparse-attention-pytorch")
-    SparseAttention = None
+from native_sparse_attention_pytorch import SparseAttention
 
 # helpers
 
